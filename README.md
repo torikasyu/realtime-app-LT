@@ -4,6 +4,17 @@
 
 ---
 
+## 🌐 公開URL (GitHub Pages / Cloud Run)
+
+- 📊 **プレゼンテーションスライド**:  
+  👉 **[https://torikasyu.github.io/realtime-app-LT/](https://torikasyu.github.io/realtime-app-LT/)**
+- 🖥️ **コード対比デモアプリ (SSE vs WS)**:  
+  👉 **[https://torikasyu.github.io/realtime-app-LT/demo/](https://torikasyu.github.io/realtime-app-LT/demo/)**
+- 🏗️ **会場参加型 3Dヤード配置リアルタイム共同検討 (Cloud Run)**:  
+  👉 **[https://realtime-app-7fgff4ji2q-an.a.run.app](https://realtime-app-7fgff4ji2q-an.a.run.app)**
+
+---
+
 ## 成果物一覧
 
 ### 1. プレゼンテーションスライド
