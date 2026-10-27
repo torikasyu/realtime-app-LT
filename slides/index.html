@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ウェブのリアルタイム通信はどう動いているのか？</title>
+  <style>
+    :root {
+      --bg: #ffffff;
+      --card-bg: #f8fafc;
+      --card-border: #e2e8f0;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --accent: #2563eb;
+      --accent-green: #059669;
+      --accent-yellow: #d97706;
+      --accent-rose: #dc2626;
+      --code-bg: #0f172a;
+      --code-text: #f8fafc;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+      user-select: none;
+    }
+
+    /* Slide Deck Container */
+    #deck {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+    }
+
+    .slide {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 50px 80px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s ease;
+      background: #ffffff;
+    }
+
+    .slide.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    /* Content Area */
+    .content-wrap {
+      width: 100%;
+      max-width: 1080px;
+      margin: 0 auto;
+    }
+
+    /* Typography */
+    .slide-badge {
+      display: inline-block;
+      font-size: 0.85rem;
+      font-weight: 700;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      padding: 4px 14px;
+      border-radius: 9999px;
+      margin-bottom: 16px;
+    }
+
+    h1.main-title {
+      font-size: 3.3rem;
+      font-weight: 800;
+      line-height: 1.25;
+      letter-spacing: -0.02em;
+      margin-bottom: 24px;
+      color: #0f172a;
+    }
+
+    h2.slide-title {
+      font-size: 2.2rem;
+      font-weight: 800;
+      line-height: 1.3;
+      margin-bottom: 24px;
+      color: #0f172a;
+      border-left: 6px solid var(--accent);
+      padding-left: 16px;
+    }
+
+    p.subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* Grid / Split Layouts */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 28px;
+      margin-top: 18px;
+      align-items: stretch;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 12px;
+      padding: 24px 28px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .card h3 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      margin-bottom: 14px;
+      color: var(--accent);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .card p,
+    .card li {
+      font-size: 1.05rem;
+      line-height: 1.7;
+      color: #334155;
+    }
+
+    .card ul {
+      list-style-type: disc;
+      padding-left: 20px;
+    }
+
+    /* Layer Stack (TCP/IP diagram) */
+    .layer-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .layer-box {
+      border: 1px solid var(--card-border);
+      border-radius: 8px;
+      padding: 14px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #ffffff;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+      transition: all 0.2s ease;
+    }
+
+    .layer-box.highlight {
+      border-color: var(--accent);
+      background: #eff6ff;
+      border-width: 2px;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.12);
+    }
+
+    .layer-box.highlight-transport {
+      border-color: var(--accent-rose);
+      background: #fef2f2;
+      border-width: 2px;
+      box-shadow: 0 2px 8px rgba(220, 38, 38, 0.12);
+    }
+
+    .layer-name {
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: #0f172a;
+    }
+
+    .layer-example {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: var(--text-muted);
+    }
+
+    /* Console / Raw HTTP Block (DevTools style) */
+    .http-console {
+      background: #f8fafc;
+      border: 1px solid #cbd5e1;
+      border-left: 5px solid var(--accent);
+      border-radius: 8px;
+      padding: 22px 26px;
+      font-family: var(--font-mono);
+      font-size: 1.08rem;
+      line-height: 1.6;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+    }
+
+    .http-console .req-line {
+      color: var(--accent);
+      font-weight: 800;
+    }
+
+    .http-console .header-name {
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    .http-console .header-val {
+      color: #0f172a;
+    }
+
+    .http-console .blank-line {
+      height: 16px;
+    }
+
+    .http-console .res-status {
+      color: var(--accent-green);
+      font-weight: 800;
+    }
+
+    .http-console .res-status.status-upgrade {
+      color: var(--accent-yellow);
+    }
+
+    .http-console .body-line {
+      color: #1e293b;
+      font-weight: 500;
+    }
+
+    /* Question / Callout Box */
+    .question-box {
+      background: #fffbeb;
+      border: 2px solid #fde68a;
+      border-radius: 12px;
+      padding: 18px 24px;
+      margin-bottom: 20px;
+    }
+
+    .question-box .q-title {
+      font-weight: 800;
+      font-size: 1.25rem;
+      color: #b45309;
+      margin-bottom: 4px;
+    }
+
+    .highlight-text {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    .danger-text {
+      color: var(--accent-rose);
+      font-weight: 700;
+    }
+
+    .success-text {
+      color: var(--accent-green);
+      font-weight: 700;
+    }
+
+    /* Comparison Table */
+    .slide-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 16px;
+      font-size: 1.05rem;
+    }
+
+    .slide-table th,
+    .slide-table td {
+      border: 1px solid var(--card-border);
+      padding: 14px 18px;
+      text-align: left;
+    }
+
+    .slide-table th {
+      background: #f1f5f9;
+      color: #0f172a;
+      font-weight: 700;
+    }
+
+    .slide-table td {
+      background: #ffffff;
+      color: #334155;
+    }
+
+    /* Controls Bar & Slide Counter */
+    #controls {
+      position: fixed;
+      bottom: 20px;
+      right: 30px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      z-index: 100;
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--card-border);
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.08);
+      padding: 6px 14px;
+      border-radius: 9999px;
+    }
+
+    #counter {
+      font-family: var(--font-mono);
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+
+    .nav-btn {
+      background: transparent;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 1.1rem;
+      padding: 4px 8px;
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .nav-btn:hover {
+      background: #e2e8f0;
+    }
+
+    /* Print / PDF Styles */
+    @page {
+      size: landscape;
+      margin: 0;
+    }
+
+    @media print {
+
+      html,
+      body {
+        width: 100% !important;
+        height: auto !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #ffffff !important;
+        overflow: visible !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      #controls {
+        display: none !important;
+      }
+
+      #deck {
+        display: block !important;
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+      }
+
+      .slide {
+        position: relative !important;
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: center !important;
+        align-items: center !important;
+        opacity: 1 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        max-height: 100vh !important;
+        box-sizing: border-box !important;
+        overflow: hidden !important;
+        /* Safariの1pxはみ出しによる余分な改ページを防止 */
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
+        page-break-after: page !important;
+        break-after: page !important;
+        background: #ffffff !important;
+        padding: 40px 60px !important;
+      }
+
+      .slide:last-child {
+        page-break-after: avoid !important;
+        break-after: avoid !important;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <div id="deck">
+
+    <!-- SLIDE 1: Title -->
+    <section class="slide active">
+      <div class="content-wrap" style="text-align: center;">
+        <div class="slide-badge">Lightning Talk</div>
+        <h1 class="main-title">ウェブのリアルタイム通信は<br>どう動いているのか？</h1>
+        <p class="subtitle" style="font-size: 1.35rem; margin-top: 16px;">
+          TCP/IP階層の基礎から、SSE・WebSocketの裏側まで
+        </p>
+        <div style="margin-top: 50px; color: var(--text-muted); font-size: 1.05rem;">
+          <span>Realtime Web Architecture</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 2: TCP/IP 4 Layers -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 1: 基礎のおさらい</div>
+        <h2 class="slide-title">覚えていますか？ TCP/IP 4階層モデル</h2>
+        <div class="grid-2">
+          <div class="layer-stack">
+            <div class="layer-box highlight">
+              <span class="layer-name">4. アプリケーション層 <small style="color: var(--accent); font-size: 0.85em;">(L7)</small></span>
+              <span class="layer-example">HTTP, DNS, SSH, SMTP</span>
+            </div>
+            <div class="layer-box">
+              <span class="layer-name">3. トランスポート層 <small style="color: var(--text-muted); font-size: 0.85em;">(L4)</small></span>
+              <span class="layer-example">TCP, UDP</span>
+            </div>
+            <div class="layer-box">
+              <span class="layer-name">2. インターネット層 <small style="color: var(--text-muted); font-size: 0.85em;">(L3)</small></span>
+              <span class="layer-example">IP, ICMP, ARP</span>
+            </div>
+            <div class="layer-box">
+              <span class="layer-name">1. ネットワークインターフェース層 <small style="color: var(--text-muted); font-size: 0.85em;">(L1/L2)</small></span>
+              <span class="layer-example">Ethernet, Wi-Fi</span>
+            </div>
+          </div>
+          <div class="card" style="display: flex; flex-direction: column; justify-content: center;">
+            <h3>教科書でおなじみのモデル</h3>
+            <p style="margin-bottom: 16px;">基本情報技術者試験やネットワーク講義で誰しも一度は暗記したモデルです。</p>
+            <p>
+              普段私たちがWebブラウザでアクセスしている時、ブラウザが使っているのは一番上の
+              <strong class="highlight-text">「HTTP（アプリケーション層 / L7）」</strong> です。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 3: Normal HTTP -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 1: 基礎のおさらい</div>
+        <h2 class="slide-title">通常のHTTP通信の姿</h2>
+        <p class="subtitle" style="margin-bottom: 20px;">
+          Webコンソール（開発者ツール）でおなじみのリクエスト＆レスポンス
+        </p>
+        <div class="http-console">
+          <div class="req-line">GET /api/user/profile HTTP/1.1</div>
+          <div><span class="header-name">Host:</span> <span class="header-val">example.com</span></div>
+          <div><span class="header-name">Accept:</span> <span class="header-val">application/json</span></div>
+          <div class="blank-line"></div>
+          <div class="res-status">HTTP/1.1 200 OK</div>
+          <div><span class="header-name">Content-Type:</span> <span class="header-val">application/json;
+              charset=utf-8</span></div>
+          <div><span class="header-name">Content-Length:</span> <span class="header-val">38</span></div>
+          <div class="blank-line"></div>
+          <div class="body-line">{"id": 42, "name": "Alice", "status": "ok"}</div>
+        </div>
+        <div style="margin-top: 18px; color: var(--text-muted); font-size: 1rem;">
+          👉 <strong>原則:</strong> クライアントが「聞いたら」、サーバーが「答えて終わり」。サーバーから勝手に送ることはできない。
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 4: FPS contrast -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 2: リアルタイムの世界</div>
+        <h2 class="slide-title">リアルタイムの極致「FPSゲーム」</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>FPS/TPSの世界（Apex, Fortniteなど）</h3>
+            <ul style="line-height: 1.9;">
+              <li><strong>Tick Rate:</strong> 1秒間に <strong>64回〜128回</strong> パケット送受信</li>
+              <li>プレイヤーの移動座標、照準、射撃イベントがミリ秒単位で同期</li>
+              <li>「今撃った弾」が10ms遅れるだけで勝敗が変わるシビアな世界</li>
+            </ul>
+          </div>
+          <div class="card" style="border-left: 4px solid var(--accent-rose);">
+            <h3 style="color: var(--accent-rose);">これ、HTTPで通信してる？</h3>
+            <p style="margin-bottom: 14px; font-weight: 700; color: var(--accent-rose);">答え: 絶対に無理です！</p>
+            <ul style="line-height: 1.9;">
+              <li>毎回HTTPリクエストを往復させる大きな遅延</li>
+              <li>毎パケット数百バイトの不要なHTTPヘッダー</li>
+              <li>相手が撃ってきた時に、サーバーから即座にプッシュできない</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 5: TCP vs UDP -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 2: リアルタイムの世界</div>
+        <h2 class="slide-title">トランスポート層の TCP と UDP の違い</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color: var(--accent);">TCP: 確実性重視</h3>
+            <ul style="line-height: 1.9;">
+              <li>3ウェイハンドシェイクで接続確立</li>
+              <li>パケットが届くまで再送し、到着順序を保証</li>
+              <li><strong>弱点:</strong> パケット詰まり（Head-of-Line Blocking）による遅延</li>
+            </ul>
+          </div>
+          <div class="card">
+            <h3 style="color: var(--accent-green);">UDP: 速度・即時性重視</h3>
+            <ul style="line-height: 1.9;">
+              <li>事前の接続確認なし。投げっぱなし。</li>
+              <li>パケットが途中で消えても再送しない（順序も不問）</li>
+              <li><strong>FPSの結論:</strong> 「1秒前の遅れた弾情報より、<strong class="highlight-text">1ミリ秒でも新しい今の座標</strong>をくれ！」</li>
+            </ul>
+          </div>
+        </div>
+        <p style="margin-top: 24px; font-size: 1.1rem; color: #475569;">
+          👉 専用ゲームはHTTPを通さず、トランスポート層の <strong class="highlight-text">OS生ソケット（主にUDP）</strong> を直接叩いている！
+        </p>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: The Browser Dilemma -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 3: Webブラウザの壁</div>
+        <h2 class="slide-title">Webブラウザの制約</h2>
+        <div class="card" style="padding: 28px; border-left: 5px solid var(--accent-rose); margin-bottom: 22px;">
+          <h3 style="color: var(--accent-rose); font-size: 1.35rem; margin-bottom: 10px;">
+            ブラウザは「生ソケット通信」が許されていない！
+          </h3>
+          <p style="font-size: 1.15rem; line-height: 1.8; color: #334155;">
+            セキュリティ（同一オリジンポリシーやサンドボックス保護）のため、<br>
+            ブラウザ上のJavaScriptからOSの生のTCP/UDPソケットを直接開く権限はありません。<br>
+            ブラウザが話せる母国語は、あくまでも <strong class="highlight-text">「HTTP」</strong> です。
+          </p>
+        </div>
+        <div class="card">
+          <h3>Web開発者が取ったアプローチ</h3>
+          <ul style="padding-left: 20px; line-height: 2.1; font-size: 1.1rem; color: #334155; list-style-type: none;">
+            <li style="color: #94a3b8; margin-bottom: 6px;">
+              <strong>0. ロングポーリング:</strong> HTTPレスポンスを保留して待つ <span style="font-size: 0.9rem;">（※今回は割愛）</span>
+            </li>
+            <li style="margin-bottom: 6px;">
+              <strong>1. HTTPの枠組みの中で頑張る:</strong> <span class="highlight-text">Server-Sent Events (SSE)</span>
+            </li>
+            <li>
+              <strong>2. HTTPで挨拶してソケットに化けさせる:</strong> <span class="highlight-text">WebSocket</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 7: Approach 1 - SSE -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 4: 手法 1</div>
+        <h2 class="slide-title">Server-Sent Events (SSE) の仕組み</h2>
+        <p class="subtitle" style="margin-bottom: 16px;">
+          HTTPの枠組みのまま、サーバーからクライアントへデータを連続ストリーミング
+        </p>
+        <div class="http-console">
+          <div class="req-line">GET /api/stream HTTP/1.1</div>
+          <div><span class="header-name">Host:</span> <span class="header-val">example.com</span></div>
+          <div><span class="header-name">Accept:</span> <span class="header-val">text/event-stream</span></div>
+          <div class="blank-line"></div>
+          <div class="res-status">HTTP/1.1 200 OK</div>
+          <div><span class="header-name">Content-Type:</span> <span class="header-val">text/event-stream</span></div>
+          <div><span class="header-name">Connection:</span> <span class="header-val">keep-alive</span></div>
+          <div class="blank-line"></div>
+          <div class="body-line">data: {"time": "10:00:01", "stock": 142.5}</div>
+          <div class="body-line" style="color: #94a3b8;">(接続を切らずに次のデータを垂れ流す...)</div>
+          <div class="body-line">data: {"time": "10:00:02", "stock": 143.0}</div>
+        </div>
+        <div style="margin-top: 14px; color: var(--text-muted); font-size: 0.95rem;">
+          👉 <strong>特徴:</strong> クライアントは標準の <code>new EventSource('/api/stream')</code> を呼ぶだけ。サーバーからの一方通行配信に最適！
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 8: TCP Handshake & Keep-Alive -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 4: 手法 1 深掘り</div>
+        <h2 class="slide-title">TCPハンドシェイクとKeep-Alive</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3 style="color: #64748b;">通常のHTTP (Keep-Aliveなし)</h3>
+            <div style="font-family: var(--font-mono); font-size: 0.95rem; line-height: 1.9; color: #475569;">
+              <strong>1. 3ウェイハンドシェイク (接続確立)</strong><br>
+              &nbsp;&nbsp;・[SYN] <em>(Hello! 接続していい？)</em><br>
+              &nbsp;&nbsp;・[SYN-ACK] <em>(Hello! OK、準備できた？)</em><br>
+              &nbsp;&nbsp;・[ACK] <em>(OK! 通信開始しよう)</em><br>
+              <strong>2. データ送受信</strong><br>
+              &nbsp;&nbsp;GET /index.html &rarr; 200 OK<br>
+              <strong>3. 切断</strong><br>
+              &nbsp;&nbsp;・[FIN] <em>(Bye! もう切るね)</em> &rarr; [ACK] <em>(了解!)</em><br>
+              <span style="color: var(--accent-rose); font-weight: 600;">※ 次のリクエストでまた 1 からやり直し！</span>
+            </div>
+          </div>
+          <div class="card" style="border-left: 4px solid var(--accent-green);">
+            <h3 style="color: var(--accent-green);">Keep-Alive & SSEの挙動</h3>
+            <div style="font-family: var(--font-mono); font-size: 0.95rem; line-height: 1.9; color: #1e293b;">
+              <strong>1. 3ウェイハンドシェイク (1回だけ)</strong><br>
+              &nbsp;&nbsp;・[SYN] &rarr; [SYN-ACK] &rarr; [ACK]<br>
+              <strong>2. ストリームリクエスト</strong><br>
+              &nbsp;&nbsp;GET /stream &rarr; 200 OK (Keep-Alive)<br>
+              <strong>3. 切断しない！</strong><br>
+              &nbsp;&nbsp;<strong class="highlight-text">[FIN] を送らず、TCP接続を繋ぎっぱなしに！</strong><br>
+              &nbsp;&nbsp;サーバー側でイベントが起きるたびにデータを流し込む
+            </div>
+          </div>
+        </div>
+        <p style="margin-top: 20px; font-size: 1.05rem; color: #475569;">
+          👉 SSEは新しいプロトコルではなく、<strong>「HTTPのKeep-Aliveを終わらせない工夫」</strong>で実現されている！
+        </p>
+      </div>
+    </section>
+
+    <!-- SLIDE 9: Approach 2 - WebSocket -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 5: 手法 2</div>
+        <h2 class="slide-title">WebSocket: ブラウザで双方向通信を行う大本命</h2>
+        <div class="grid-2">
+          <div class="card">
+            <h3>WebSocketの発想</h3>
+            <p style="line-height: 1.8; color: #334155;">
+              「ブラウザは最初から生ソケットを開けない」<br>
+              &darr;<br>
+              <strong>「ならば、最初はHTTPとしてサーバーに接続し、<br>
+                その場でソケット通信へと『プロトコルを昇格』させればいい！」</strong>
+            </p>
+          </div>
+          <div class="card">
+            <h3>WebSocketの強み</h3>
+            <ul style="line-height: 1.9;">
+              <li><strong>完全な双方向（全二重通信）:</strong> サーバーもクライアントもいつでも送れる</li>
+              <li><strong>最小のオーバーヘッド:</strong> 接続後のフレームヘッダーはわずか <strong>2〜14バイト</strong></li>
+              <li>ポート80 / 443（通常のWeb用ポート）をそのまま通過できる</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 10: 101 Switching Protocols -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 5: 手法 2 深掘り</div>
+        <h2 class="slide-title">プロトコルを変える: 101 Switching Protocols</h2>
+        <p class="subtitle" style="margin-bottom: 16px;">
+          HTTPからWebSocketへ変身するハンドシェイク
+        </p>
+        <div class="http-console">
+          <div class="req-line">GET /chat HTTP/1.1</div>
+          <div><span class="header-name">Host:</span> <span class="header-val">example.com</span></div>
+          <div><span class="header-name">Upgrade:</span> <span class="header-val"
+              style="color: var(--accent); font-weight: 700;">websocket</span></div>
+          <div><span class="header-name">Connection:</span> <span class="header-val"
+              style="color: var(--accent); font-weight: 700;">Upgrade</span></div>
+          <div><span class="header-name">Sec-WebSocket-Key:</span> <span
+              class="header-val">dGhlIHNhbXBsZSBub25jZQ==</span></div>
+          <div class="blank-line"></div>
+          <div class="res-status status-upgrade">HTTP/1.1 101 Switching Protocols</div>
+          <div><span class="header-name">Upgrade:</span> <span class="header-val"
+              style="color: var(--accent); font-weight: 700;">websocket</span></div>
+          <div><span class="header-name">Connection:</span> <span class="header-val"
+              style="color: var(--accent); font-weight: 700;">Upgrade</span></div>
+        </div>
+        <div style="margin-top: 14px; color: var(--text-muted); font-size: 0.95rem;">
+          👉 <strong>この瞬間以降:</strong> HTTP通信は終了し、下にあるTCPコネクションがそのまま<strong>双方向バイナリフレーム通信</strong>に切り替わる！
+        </div>
+        <div
+          style="margin-top: 16px; background: #f1f5f9; border-radius: 8px; padding: 12px 18px; font-size: 0.95rem; color: #475569; border-left: 4px solid var(--accent);">
+          💡 <strong>技術トリビア:</strong>
+          実は「101」はWebSocketのために作られたコードではありません（HTTP/1.1策定の1997年生まれ）。ファイアウォールを通過するため、10年以上眠っていた既存の仕様をハックして再活用した歴史があります。
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 11: Stateful vs Stateless -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 5.3: 構造的な矛盾</div>
+        <h2 class="slide-title">相手は誰？: 「ステートフル」と「ステートレス」</h2>
+        <div class="grid-2">
+          <div class="card" style="border-left: 4px solid var(--accent);">
+            <h3 style="color: var(--accent);">TCP: ステートフル (Stateful)</h3>
+            <ul style="line-height: 1.9;">
+              <li>ハンドシェイクで<strong>「接続状態（ESTABLISHED）」</strong>を保持</li>
+              <li>相手のIP、ポート、シーケンス番号を常時記憶</li>
+              <li>👉 <strong>「相手が今そこに居る」</strong>ことをお互いに知っている</li>
+            </ul>
+          </div>
+          <div class="card" style="border-left: 4px solid var(--accent-yellow);">
+            <h3 style="color: var(--accent-yellow);">HTTP: ステートレス (Stateless)</h3>
+            <ul style="line-height: 1.9;">
+              <li>リクエストとレスポンスの<strong>「1問1答」で完結</strong></li>
+              <li>通信が終われば相手のことはサッパリ忘れる</li>
+              <li>👉 プロトコル自体には<strong>「今誰が繋がっているか」の概念がない</strong></li>
+            </ul>
+          </div>
+        </div>
+        <div
+          style="margin-top: 24px; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 8px; padding: 14px 20px; font-size: 1.05rem; color: #1e3a8a;">
+          💡 <strong>本質的な問題:</strong> リアルタイム通信には「繋がり（状態）」が必須。<br>
+          <strong>「ステートレスに設計されたHTTPの上で、どうやってステートフルな体験を作るか？」</strong> を考える必要がある。
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 12: Practical Architecture: BFF & Authentication -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Chapter 5.5: 現場のリアル</div>
+        <h2 class="slide-title">実務の解: 認証ヘッダーと「BFFパターン」</h2>
+        <div
+          style="background: #fffbeb; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 18px; margin-bottom: 16px; font-size: 0.98rem; color: #92400e;">
+          ⚠️ <strong>課題:</strong> ブラウザ標準の <code>EventSource</code> や <code>WebSocket</code> は <code>Authorization: Bearer</code> ヘッダーを直接付けられない（そもそもSPAに生トークンを持たせるのもセキュリティ上危険）。
+        </div>
+
+        <!-- BFF Diagram Box -->
+        <div class="card" style="padding: 16px 20px; border-left: 4px solid var(--accent); margin-bottom: 16px; background: #f8fafc;">
+          <h3 style="font-size: 1.05rem; margin-bottom: 10px; color: var(--accent);">🏆 王道の解決策: BFF (Backend For Frontend) によるトークン仲介</h3>
+          <div style="display: flex; align-items: center; justify-content: space-around; font-family: var(--font-mono); font-size: 0.88rem; background: #ffffff; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border-dark);">
+            <div style="text-align: center;">
+              <span style="font-weight: 700; color: #0f172a;">[ ブラウザ ]</span>
+            </div>
+            <div style="text-align: center; color: var(--accent); font-size: 0.8rem;">
+              ─── <strong>httpOnly Cookie</strong> (安全・自動送信) ───&gt;
+            </div>
+            <div style="text-align: center; background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px; padding: 4px 10px;">
+              <span style="font-weight: 700; color: var(--accent);">[ BFF (Next.js等) ]</span>
+            </div>
+            <div style="text-align: center; color: var(--accent-green); font-size: 0.8rem;">
+              ─── <strong>Bearer &lt;token&gt;</strong> (代理付与) ───&gt;
+            </div>
+            <div style="text-align: center;">
+              <span style="font-weight: 700; color: #0f172a;">[ 裏側API / AI ]</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="grid-2" style="margin-top: 0; gap: 18px;">
+          <div class="card" style="padding: 14px 18px;">
+            <h3 style="color: var(--accent-green); font-size: 1rem; margin-bottom: 6px;">BFF構成のメリット</h3>
+            <ul style="line-height: 1.7; font-size: 0.9rem; color: #334155;">
+              <li><strong>① ヘッダー問題が消滅:</strong> CookieはSSEもWSもブラウザが自動送信</li>
+              <li><strong>② XSS対策:</strong> JSから盗めない httpOnly Cookie で安全</li>
+              <li><strong>③ API統一:</strong> 裏のAPIは通常の <code>Bearer</code> 認証基盤のままでOK</li>
+            </ul>
+          </div>
+          <div class="card" style="padding: 14px 18px;">
+            <h3 style="color: #64748b; font-size: 1rem; margin-bottom: 6px;">BFFを挟まない場合の現場解</h3>
+            <ul style="line-height: 1.7; font-size: 0.9rem; color: #334155;">
+              <li><strong>SSE:</strong> <code>EventSource</code> を捨てて <strong class="highlight-text"><code>fetch()</code> + ReadableStream</strong> で自作（ヘッダー自由）</li>
+              <li><strong>WS:</strong> 短命ワンタイムチケット（URL付与）または接続直後の<strong>第1メッセージ認証</strong></li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 13: Demo 1 Transition -->
+    <section class="slide">
+      <div class="content-wrap" style="text-align: center;">
+        <div class="slide-badge">Chapter 6: 実演 パート1</div>
+        <h2 class="slide-title" style="font-size: 2.8rem; margin-bottom: 24px; border-left: none; padding-left: 0;">
+          デモ実演 1: コードと動きで見る<br>SSE vs WebSocket
+        </h2>
+        <p class="subtitle" style="margin-bottom: 36px; max-width: 720px; margin-inline: auto;">
+          クライアント側コードとサーバー側コードが、<br>
+          実際の通信パケットとどのように対応して動いているかを画面で確認してみましょう！
+        </p>
+        <div class="card" style="display: inline-block; padding: 22px 40px; text-align: left;">
+          <div style="font-size: 1.15rem; color: #1e293b;">
+            <strong class="highlight-text">👀 注目ポイント:</strong>
+            <ul style="margin-top: 8px; line-height: 1.9;">
+              <li><strong>SSE:</strong> <code>EventSource</code> と サーバー側ストリーム出力の対応</li>
+              <li><strong>WebSocket:</strong> <code>101 Upgrade</code> と 双方向メッセージ送受信の対応</li>
+            </ul>
+          </div>
+        </div>
+        <div style="margin-top: 24px;">
+          <a href="../demo/index.html" target="_blank"
+            style="display: inline-flex; align-items: center; gap: 8px; background: var(--accent); color: #fff; padding: 10px 24px; border-radius: 8px; text-decoration: none; font-weight: 700; font-size: 1.05rem; box-shadow: 0 2px 8px rgba(37, 99, 235, 0.25);">
+            🖥️ 対比デモ画面を開く &rarr;
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 14: Demo 2 Audience Participation -->
+    <section class="slide">
+      <div class="content-wrap" style="text-align: center;">
+        <div class="slide-badge" style="background: #ecfdf5; color: var(--accent-green); border-color: #a7f3d0;">Chapter
+          6: 実演 パート2</div>
+        <h2 class="slide-title" style="font-size: 2.3rem; margin-bottom: 12px; border-left: none; padding-left: 0;">
+          デモ実演 2: 【会場参加型】<br>ヤード配置のリアルタイム共同検討
+        </h2>
+        <p class="subtitle" style="font-size: 1.1rem; margin-bottom: 20px;">
+          3D空間上で重機や仮設物の配置を全員でリアルタイム同期・共同編集！
+        </p>
+
+        <div
+          style="display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 28px; align-items: stretch; text-align: left; margin-top: 6px;">
+          <!-- Left: 3D App Preview Image -->
+          <div class="card"
+            style="padding: 14px; display: flex; flex-direction: column; justify-content: space-between;">
+            <div
+              style="border-radius: 8px; overflow: hidden; border: 1px solid var(--card-border); background: #000; box-shadow: 0 2px 8px rgba(0,0,0,0.06);">
+              <img src="yard-demo.png" alt="ヤード配置のリアルタイム共同検討"
+                style="width: 100%; height: auto; display: block; object-fit: cover;">
+            </div>
+            <div
+              style="margin-top: 10px; font-size: 0.9rem; color: #475569; display: flex; align-items: center; justify-content: space-between;">
+              <span>🏗️ <strong>重機・資材の座標・姿勢を全クライアントへ即時ブロードキャスト</strong></span>
+            </div>
+          </div>
+
+          <!-- Right: QR Code & Access Info -->
+          <div style="display: flex; flex-direction: column; gap: 14px; justify-content: space-between;">
+            <div class="card"
+              style="padding: 16px; display: flex; align-items: center; gap: 18px; border-left: 4px solid var(--accent-green);">
+              <div
+                style="background: #ffffff; border: 1px solid var(--border-dark); border-radius: 10px; padding: 8px; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.05);">
+                <img src="qr-demo.svg" alt="QR Code" style="width: 110px; height: 110px; display: block;">
+              </div>
+              <div>
+                <div style="font-size: 0.85rem; font-weight: 700; color: var(--accent-green); margin-bottom: 4px;">📱
+                  スマホ/PCで参加</div>
+                <a href="https://realtime-app-7fgff4ji2q-an.a.run.app" target="_blank"
+                  style="font-family: var(--font-mono); font-size: 0.82rem; color: var(--accent); font-weight: 700; word-break: break-all; text-decoration: none; line-height: 1.4; display: block;">
+                  https://realtime-app-7fgff4ji2q-an.a.run.app
+                </a>
+              </div>
+            </div>
+
+            <div class="card" style="padding: 16px; flex: 1;">
+              <h3 style="font-size: 1.05rem; margin-bottom: 8px;">体感ポイント</h3>
+              <ul style="line-height: 1.8; font-size: 0.92rem; color: #334155;">
+                <li>誰かが重機をドラッグすると、<strong>全員の画面上のクレーンが同時に動く！</strong></li>
+                <li>WebSocketの全二重・低遅延だからこそ実現できる「多人数3Dリアルタイム同期」</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- SLIDE 15: Summary -->
+    <section class="slide">
+      <div class="content-wrap">
+        <div class="slide-badge">Summary</div>
+        <h2 class="slide-title">まとめ: 用途に応じたリアルタイム技術の選択</h2>
+        <table class="slide-table">
+          <thead>
+            <tr>
+              <th>比較項目</th>
+              <th>Server-Sent Events (SSE)</th>
+              <th>WebSocket</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>通信方向</strong></td>
+              <td>単方向（サーバー &rarr; クライアント）</td>
+              <td>双方向（全二重通信）</td>
+            </tr>
+            <tr>
+              <td><strong>プロトコル</strong></td>
+              <td>HTTP/1.1 または HTTP/2（標準）</td>
+              <td>独自フレーム（<code>ws://</code>, <code>wss://</code>）</td>
+            </tr>
+            <tr>
+              <td><strong>実装難易度</strong></td>
+              <td>超簡単（標準HTTPインフラがそのまま通る）</td>
+              <td>サーバー側でWS対応が必要</td>
+            </tr>
+            <tr>
+              <td><strong>代表的な用途</strong></td>
+              <td>通知、株価ティッカー、ChatGPT風テキスト生成</td>
+              <td>チャット、オンラインゲーム、共同編集</td>
+            </tr>
+          </tbody>
+        </table>
+        <div
+          style="margin-top: 26px; text-align: center; color: var(--text-muted); font-size: 1.1rem; font-weight: 600;">
+          ご清聴ありがとうございました！
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Navigation Controls -->
+  <div id="controls">
+    <button class="nav-btn" id="prevBtn" title="前へ (&larr;)">&larr;</button>
+    <span id="counter">1 / 15</span>
+    <button class="nav-btn" id="nextBtn" title="次へ (&rarr;)">&rarr;</button>
+    <button class="nav-btn" id="fsBtn" title="全画面 (F)">&#x26F6;</button>
+  </div>
+
+  <script>
+    const slides = document.querySelectorAll('.slide');
+    const counter = document.getElementById('counter');
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const fsBtn = document.getElementById('fsBtn');
+    let currentIndex = 0;
+
+    function showSlide(index) {
+      if (index < 0) index = 0;
+      if (index >= slides.length) index = slides.length - 1;
+      currentIndex = index;
+      slides.forEach((s, i) => {
+        s.classList.toggle('active', i === currentIndex);
+      });
+      counter.textContent = `${currentIndex + 1} / ${slides.length}`;
+      history.replaceState(null, null, `#${currentIndex + 1}`);
+    }
+
+    function nextSlide() {
+      showSlide(currentIndex + 1);
+    }
+
+    function prevSlide() {
+      showSlide(currentIndex - 1);
+    }
+
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => { });
+      } else {
+        document.exitFullscreen().catch(() => { });
+      }
+    }
+
+    // Keyboard Navigation
+    window.addEventListener('keydown', (e) => {
+      if (['ArrowRight', 'ArrowDown', 'Space', 'PageDown', 'l', 'j'].includes(e.key)) {
+        e.preventDefault();
+        nextSlide();
+      } else if (['ArrowLeft', 'ArrowUp', 'PageUp', 'h', 'k'].includes(e.key)) {
+        e.preventDefault();
+        prevSlide();
+      } else if (e.key === 'f' || e.key === 'F') {
+        toggleFullscreen();
+      } else if (e.key === 'Home') {
+        e.preventDefault();
+        showSlide(0);
+      } else if (e.key === 'End') {
+        e.preventDefault();
+        showSlide(slides.length - 1);
+      }
+    });
+
+    prevBtn.addEventListener('click', prevSlide);
+    nextBtn.addEventListener('click', nextSlide);
+    fsBtn.addEventListener('click', toggleFullscreen);
+
+    // Restore slide from URL hash if present
+    const hash = window.location.hash.replace('#', '');
+    const initialIndex = parseInt(hash, 10) - 1;
+    if (!isNaN(initialIndex) && initialIndex >= 0 && initialIndex < slides.length) {
+      showSlide(initialIndex);
+    } else {
+      showSlide(0);
+    }
+  </script>
+
+</body>
+
+</html>

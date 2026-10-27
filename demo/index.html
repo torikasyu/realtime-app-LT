@@ -1,0 +1,948 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>リアルタイム通信デモ: SSE vs WebSocket</title>
+  <style>
+    :root {
+      --bg: #f8fafc;
+      --panel-bg: #ffffff;
+      --border: #e2e8f0;
+      --border-dark: #cbd5e1;
+      --text: #0f172a;
+      --text-muted: #64748b;
+      --accent: #2563eb;
+      --accent-light: #eff6ff;
+      --accent-green: #059669;
+      --accent-green-light: #ecfdf5;
+      --accent-yellow: #d97706;
+      --accent-rose: #dc2626;
+      --code-bg: #f1f5f9;
+      --code-border: #cbd5e1;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background: #ffffff;
+      border-bottom: 1px solid var(--border);
+      padding: 14px 28px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand h1 {
+      font-size: 1.25rem;
+      font-weight: 800;
+      color: var(--text);
+    }
+
+    .brand-tag {
+      font-size: 0.75rem;
+      font-weight: 700;
+      background: #eff6ff;
+      color: var(--accent);
+      border: 1px solid #bfdbfe;
+      padding: 2px 8px;
+      border-radius: 9999px;
+    }
+
+    /* Mode Switcher Tabs */
+    .mode-switcher {
+      display: flex;
+      background: #e2e8f0;
+      padding: 3px;
+      border-radius: 8px;
+      gap: 4px;
+    }
+
+    .mode-tab {
+      padding: 6px 18px;
+      border: none;
+      background: transparent;
+      border-radius: 6px;
+      font-size: 0.92rem;
+      font-weight: 700;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    .mode-tab.active {
+      background: #ffffff;
+      color: var(--accent);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+    }
+
+    /* Main Grid Layout */
+    main {
+      flex: 1;
+      padding: 20px 24px;
+      display: grid;
+      grid-template-columns: 1fr 280px 1fr;
+      gap: 20px;
+      max-width: 1500px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .panel {
+      background: var(--panel-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+    }
+
+    .panel-header {
+      padding: 12px 18px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: #fdfefe;
+    }
+
+    .panel-title {
+      font-size: 1rem;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .panel-badge {
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+
+    .badge-client {
+      background: #eff6ff;
+      color: var(--accent);
+      border: 1px solid #bfdbfe;
+    }
+
+    .badge-server {
+      background: #ecfdf5;
+      color: var(--accent-green);
+      border: 1px solid #a7f3d0;
+    }
+
+    .panel-body {
+      padding: 16px 18px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Code View Box */
+    .code-box {
+      background: var(--code-bg);
+      border: 1px solid var(--code-border);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: var(--font-mono);
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: #1e293b;
+      position: relative;
+    }
+
+    .code-line {
+      display: block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      transition: background 0.3s ease, color 0.3s ease;
+      white-space: pre-wrap;
+    }
+
+    .code-line.active-client {
+      background: #bfdbfe;
+      color: #1e3a8a;
+      font-weight: 700;
+      box-shadow: 0 0 8px rgba(37, 99, 235, 0.25);
+    }
+
+    .code-line.active-server {
+      background: #a7f3d0;
+      color: #064e3b;
+      font-weight: 700;
+      box-shadow: 0 0 8px rgba(5, 150, 105, 0.25);
+    }
+
+    .code-comment {
+      color: #64748b;
+      font-style: italic;
+    }
+
+    .code-kw {
+      color: #2563eb;
+      font-weight: 700;
+    }
+
+    .code-str {
+      color: #059669;
+    }
+
+    /* Controls */
+    .controls-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      font-weight: 600;
+      cursor: pointer;
+      border: 1px solid transparent;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #ffffff;
+    }
+    .btn-primary:hover:not(:disabled) {
+      background: #1d4ed8;
+    }
+
+    .btn-success {
+      background: var(--accent-green);
+      color: #ffffff;
+    }
+    .btn-success:hover:not(:disabled) {
+      background: #047857;
+    }
+
+    .btn-secondary {
+      background: #ffffff;
+      color: var(--text);
+      border-color: var(--border-dark);
+    }
+    .btn-secondary:hover:not(:disabled) {
+      background: #f1f5f9;
+    }
+
+    .btn-danger {
+      background: #fef2f2;
+      color: var(--accent-rose);
+      border-color: #fecaca;
+    }
+    .btn-danger:hover:not(:disabled) {
+      background: #fee2e2;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .input-row {
+      display: flex;
+      gap: 8px;
+    }
+
+    .input-text {
+      flex: 1;
+      padding: 8px 12px;
+      border: 1px solid var(--border-dark);
+      border-radius: 6px;
+      font-size: 0.88rem;
+      outline: none;
+    }
+    .input-text:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    }
+
+    /* Log Box */
+    .log-box {
+      flex: 1;
+      min-height: 180px;
+      max-height: 240px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-family: var(--font-mono);
+      font-size: 0.8rem;
+      line-height: 1.5;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .log-entry {
+      display: flex;
+      gap: 8px;
+      padding: 2px 0;
+      border-bottom: 1px solid #f8fafc;
+    }
+
+    .log-time {
+      color: #94a3b8;
+      font-size: 0.75rem;
+      flex-shrink: 0;
+    }
+
+    .log-text {
+      word-break: break-all;
+    }
+
+    .log-text.info { color: var(--accent); }
+    .log-text.success { color: var(--accent-green); font-weight: 600; }
+    .log-text.warn { color: var(--accent-yellow); }
+    .log-text.error { color: var(--accent-rose); }
+
+    /* Center Network Lane Visualizer */
+    .network-lane {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 10px;
+      background: #ffffff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .lane-status-badge {
+      font-size: 0.82rem;
+      font-weight: 700;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      text-align: center;
+      width: 100%;
+      border: 1px solid var(--border);
+      background: #f1f5f9;
+      color: var(--text-muted);
+      transition: all 0.3s ease;
+    }
+
+    .lane-status-badge.connected-sse {
+      background: #eff6ff;
+      border-color: #bfdbfe;
+      color: var(--accent);
+    }
+
+    .lane-status-badge.connected-ws {
+      background: #ecfdf5;
+      border-color: #a7f3d0;
+      color: var(--accent-green);
+    }
+
+    .wire-container {
+      flex: 1;
+      width: 100%;
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+    }
+
+    .wire {
+      width: 4px;
+      height: 85%;
+      background: #cbd5e1;
+      border-radius: 2px;
+      position: relative;
+      transition: background 0.3s ease;
+    }
+
+    .wire.active-stream {
+      background: linear-gradient(180deg, #93c5fd, #3b82f6);
+      box-shadow: 0 0 10px rgba(59, 130, 246, 0.4);
+    }
+
+    .wire.active-ws {
+      background: linear-gradient(180deg, #6ee7b7, #10b981);
+      box-shadow: 0 0 10px rgba(16, 185, 129, 0.4);
+    }
+
+    /* Moving Packets */
+    .packet {
+      position: absolute;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      font-family: var(--font-mono);
+      white-space: nowrap;
+      pointer-events: none;
+      z-index: 10;
+      opacity: 0;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
+    }
+
+    @keyframes travel-c2s {
+      0% { top: 15%; opacity: 0; transform: translate(-50%, 0) scale(0.8); }
+      15% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      85% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      100% { top: 80%; opacity: 0; transform: translate(-50%, 0) scale(0.8); }
+    }
+
+    @keyframes travel-s2c {
+      0% { top: 80%; opacity: 0; transform: translate(-50%, 0) scale(0.8); }
+      15% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      85% { opacity: 1; transform: translate(-50%, 0) scale(1); }
+      100% { top: 15%; opacity: 0; transform: translate(-50%, 0) scale(0.8); }
+    }
+
+    .packet.traveling-c2s {
+      animation: travel-c2s 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+
+    .packet.traveling-s2c {
+      animation: travel-s2c 1.2s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+    }
+
+    .packet-http {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      color: #1d4ed8;
+    }
+
+    .packet-upgrade {
+      background: #fffbeb;
+      border: 1px solid #fde68a;
+      color: #b45309;
+    }
+
+    .packet-data {
+      background: #ecfdf5;
+      border: 1px solid #a7f3d0;
+      color: #065f46;
+    }
+
+    .lane-footer {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.4;
+      padding-top: 8px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <h1>リアルタイム通信 対比デモ</h1>
+    <span class="brand-tag">LT 実演モード</span>
+    <a href="https://realtime-app-7fgff4ji2q-an.a.run.app" target="_blank" style="margin-left: 12px; font-size: 0.8rem; font-weight: 700; color: #059669; background: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 10px; border-radius: 6px; text-decoration: none; display: inline-flex; align-items: center; gap: 4px;">
+      👥 会場参加型デモ (Cloud Run) &rarr;
+    </a>
+  </div>
+  <div class="mode-switcher">
+    <button class="mode-tab active" id="tabSSE" onclick="switchMode('sse')">1. Server-Sent Events (SSE)</button>
+    <button class="mode-tab" id="tabWS" onclick="switchMode('ws')">2. WebSocket</button>
+  </div>
+</header>
+
+<main>
+  <!-- CLIENT PANEL -->
+  <section class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <span>クライアント側 (Client / Browser)</span>
+      </div>
+      <span class="panel-badge badge-client" id="clientStatusBadge">未接続</span>
+    </div>
+
+    <div class="panel-body">
+      <!-- Code Box (Client) -->
+      <div class="code-box" id="clientCodeBox">
+        <!-- Injected via JS based on mode -->
+      </div>
+
+      <!-- Controls (Client) -->
+      <div class="controls-group">
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btnConnect" onclick="handleClientConnect()">
+            &#x25B6; 接続開始
+          </button>
+          <button class="btn btn-danger" id="btnDisconnect" onclick="handleClientDisconnect()" disabled>
+            &#x25A0; 切断
+          </button>
+        </div>
+
+        <div class="input-row" id="wsInputRow" style="display: none;">
+          <input type="text" class="input-text" id="wsMessageInput" placeholder="サーバーに送るメッセージ..." value="こんにちは！" disabled>
+          <button class="btn btn-secondary" id="btnSendMessage" onclick="handleClientSend()" disabled>
+            送信 &uarr;
+          </button>
+        </div>
+      </div>
+
+      <!-- Client Logs -->
+      <div>
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
+          クライアント受信コンソール:
+        </div>
+        <div class="log-box" id="clientLog"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CENTER NETWORK LANE -->
+  <section class="network-lane">
+    <div class="lane-status-badge" id="networkLaneBadge">
+      通信路: アイドル (未接続)
+    </div>
+
+    <div class="wire-container" id="wireContainer">
+      <div class="wire" id="centerWire"></div>
+      <!-- Packets will be dynamically appended here -->
+    </div>
+
+    <div class="lane-footer" id="networkLaneFooter">
+      クライアントとサーバー間の<br>通信パケットをリアルタイム可視化
+    </div>
+  </section>
+
+  <!-- SERVER PANEL -->
+  <section class="panel">
+    <div class="panel-header">
+      <div class="panel-title">
+        <span>サーバー側 (Server / Backend)</span>
+      </div>
+      <span class="panel-badge badge-server" id="serverStatusBadge">待機中 (Port 3000)</span>
+    </div>
+
+    <div class="panel-body">
+      <!-- Code Box (Server) -->
+      <div class="code-box" id="serverCodeBox">
+        <!-- Injected via JS based on mode -->
+      </div>
+
+      <!-- Controls (Server) -->
+      <div class="controls-group">
+        <div class="btn-row">
+          <button class="btn btn-success" id="btnServerPush" onclick="handleServerPush()" disabled>
+            &#x2728; サーバーからデータ送信 (Push)
+          </button>
+          <button class="btn btn-secondary" id="btnAutoStream" onclick="toggleAutoStream()" disabled>
+            &#x21BB; 自動ストリーム開始 (2秒間隔)
+          </button>
+        </div>
+      </div>
+
+      <!-- Server Logs -->
+      <div>
+        <div style="font-size: 0.8rem; font-weight: 700; color: var(--text-muted); margin-bottom: 6px;">
+          サーバー出力ログ:
+        </div>
+        <div class="log-box" id="serverLog"></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+  let currentMode = 'sse'; // 'sse' or 'ws'
+  let isConnected = false;
+  let autoStreamInterval = null;
+  let eventCounter = 0;
+  let realES = null;
+  let realWS = null;
+  const isServerRunning = window.location.protocol.startsWith('http');
+
+  // Code snippets with line identifiers
+  const CODE_TEMPLATES = {
+    sse: {
+      client: [
+        { id: 'c-sse-1', text: '<span class="code-comment">// 1. SSEストリームエンドポイントに接続</span>' },
+        { id: 'c-sse-2', text: '<span class="code-kw">const</span> es = <span class="code-kw">new</span> EventSource(<span class="code-str">"/api/stream"</span>);' },
+        { id: 'c-sse-3', text: '<span class="code-comment">// 2. サーバーからのプッシュを受信</span>' },
+        { id: 'c-sse-4', text: 'es.onmessage = (event) => {' },
+        { id: 'c-sse-5', text: '  console.log(<span class="code-str">"受信:"</span>, event.data);' },
+        { id: 'c-sse-6', text: '};' },
+        { id: 'c-sse-7', text: '<span class="code-comment">// 3. 切断時</span>' },
+        { id: 'c-sse-8', text: 'es.close();' }
+      ],
+      server: [
+        { id: 's-sse-1', text: '<span class="code-comment">// 1. SSEリクエストを受信</span>' },
+        { id: 's-sse-2', text: 'app.get(<span class="code-str">"/api/stream"</span>, (req, res) => {' },
+        { id: 's-sse-3', text: '  res.writeHead(200, {' },
+        { id: 's-sse-4', text: '    <span class="code-str">"Content-Type"</span>: <span class="code-str">"text/event-stream"</span>,' },
+        { id: 's-sse-5', text: '    <span class="code-str">"Connection"</span>: <span class="code-str">"keep-alive"</span>' },
+        { id: 's-sse-6', text: '  });' },
+        { id: 's-sse-7', text: '  <span class="code-comment">// 2. 接続を終了させず(FIN送らず)データを流す</span>' },
+        { id: 's-sse-8', text: '  res.write(<span class="code-str">`data: ${JSON.stringify(payload)}\\n\\n`</span>);' },
+        { id: 's-sse-9', text: '});' }
+      ]
+    },
+    ws: {
+      client: [
+        { id: 'c-ws-1', text: '<span class="code-comment">// 1. WebSocket接続 (HTTP Upgradeリクエスト)</span>' },
+        { id: 'c-ws-2', text: '<span class="code-kw">const</span> ws = <span class="code-kw">new</span> WebSocket(<span class="code-str">"ws://localhost:3000"</span>);' },
+        { id: 'c-ws-3', text: '<span class="code-comment">// 2. クライアントからサーバーへメッセージ送信</span>' },
+        { id: 'c-ws-4', text: 'ws.send(JSON.stringify({ text: msg }));' },
+        { id: 'c-ws-5', text: '<span class="code-comment">// 3. サーバーからの双方向メッセージ受信</span>' },
+        { id: 'c-ws-6', text: 'ws.onmessage = (event) => {' },
+        { id: 'c-ws-7', text: '  console.log(<span class="code-str">"受信:"</span>, event.data);' },
+        { id: 'c-ws-8', text: '};' }
+      ],
+      server: [
+        { id: 's-ws-1', text: '<span class="code-comment">// 1. 101 Switching Protocols ハンドシェイク完了後</span>' },
+        { id: 's-ws-2', text: 'wss.on(<span class="code-str">"connection"</span>, (ws) => {' },
+        { id: 's-ws-3', text: '  <span class="code-comment">// 2. クライアントからのメッセージを受信</span>' },
+        { id: 's-ws-4', text: '  ws.on(<span class="code-str">"message"</span>, (data) => {' },
+        { id: 's-ws-5', text: '    <span class="code-comment">// 3. クライアントへいつでも自由に送信</span>' },
+        { id: 's-ws-6', text: '    ws.send(<span class="code-str">`Echo: ${data}`</span>);' },
+        { id: 's-ws-7', text: '  });' },
+        { id: 's-ws-8', text: '});' }
+      ]
+    }
+  };
+
+  function renderCode() {
+    const cBox = document.getElementById('clientCodeBox');
+    const sBox = document.getElementById('serverCodeBox');
+    cBox.innerHTML = CODE_TEMPLATES[currentMode].client.map(l =>
+      `<span class="code-line" id="${l.id}">${l.text}</span>`
+    ).join('');
+    sBox.innerHTML = CODE_TEMPLATES[currentMode].server.map(l =>
+      `<span class="code-line" id="${l.id}">${l.text}</span>`
+    ).join('');
+  }
+
+  function highlightLines(clientIds = [], serverIds = [], durationMs = 1200) {
+    clientIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('active-client');
+    });
+    serverIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.add('active-server');
+    });
+
+    setTimeout(() => {
+      clientIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('active-client');
+      });
+      serverIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.classList.remove('active-server');
+      });
+    }, durationMs);
+  }
+
+  function appendLog(targetId, text, type = 'normal') {
+    const box = document.getElementById(targetId);
+    const time = new Date().toTimeString().split(' ')[0] + '.' + String(new Date().getMilliseconds()).padStart(3, '0');
+    const entry = document.createElement('div');
+    entry.className = 'log-entry';
+    entry.innerHTML = `<span class="log-time">[${time}]</span><span class="log-text ${type}">${text}</span>`;
+    box.appendChild(entry);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function spawnPacket(label, direction, type = 'packet-data', onComplete = null) {
+    const container = document.getElementById('wireContainer');
+    const packet = document.createElement('div');
+    packet.className = `packet ${type} ${direction === 'c2s' ? 'traveling-c2s' : 'traveling-s2c'}`;
+    packet.textContent = label;
+    container.appendChild(packet);
+
+    setTimeout(() => {
+      packet.remove();
+      if (onComplete) onComplete();
+    }, 1200);
+  }
+
+  function switchMode(mode) {
+    if (isConnected) {
+      handleClientDisconnect();
+    }
+    currentMode = mode;
+    document.getElementById('tabSSE').classList.toggle('active', mode === 'sse');
+    document.getElementById('tabWS').classList.toggle('active', mode === 'ws');
+    document.getElementById('wsInputRow').style.display = mode === 'ws' ? 'flex' : 'none';
+    renderCode();
+    resetUI();
+    appendLog('clientLog', `モード切り替え: ${mode.toUpperCase()}`, 'info');
+    appendLog('serverLog', `モード切り替え: ${mode.toUpperCase()} (待機中)`, 'info');
+  }
+
+  function resetUI() {
+    document.getElementById('clientStatusBadge').textContent = '未接続';
+    document.getElementById('clientStatusBadge').className = 'panel-badge badge-client';
+    document.getElementById('btnConnect').disabled = false;
+    document.getElementById('btnDisconnect').disabled = true;
+    document.getElementById('btnServerPush').disabled = true;
+    document.getElementById('btnAutoStream').disabled = true;
+    document.getElementById('btnAutoStream').textContent = '↻ 自動ストリーム開始 (2秒間隔)';
+    if (currentMode === 'ws') {
+      document.getElementById('wsMessageInput').disabled = true;
+      document.getElementById('btnSendMessage').disabled = true;
+    }
+    document.getElementById('networkLaneBadge').textContent = '通信路: アイドル (未接続)';
+    document.getElementById('networkLaneBadge').className = 'lane-status-badge';
+    document.getElementById('centerWire').className = 'wire';
+    if (autoStreamInterval) {
+      clearInterval(autoStreamInterval);
+      autoStreamInterval = null;
+    }
+  }
+
+  function handleClientConnect() {
+    document.getElementById('btnConnect').disabled = true;
+
+    if (currentMode === 'sse') {
+      appendLog('clientLog', 'GET /api/stream (Accept: text/event-stream) を送信...', 'info');
+      highlightLines(['c-sse-1', 'c-sse-2'], ['s-sse-1', 's-sse-2'], 1200);
+
+      spawnPacket('GET /api/stream', 'c2s', 'packet-http', () => {
+        appendLog('serverLog', 'GET /api/stream を受信。200 OK (Keep-Alive) で応答確立', 'success');
+        highlightLines([], ['s-sse-3', 's-sse-4', 's-sse-5', 's-sse-6'], 1000);
+
+        spawnPacket('200 text/event-stream', 's2c', 'packet-http', () => {
+          isConnected = true;
+          document.getElementById('clientStatusBadge').textContent = 'SSE接続中 (Keep-Alive)';
+          document.getElementById('btnDisconnect').disabled = false;
+          document.getElementById('btnServerPush').disabled = false;
+          document.getElementById('btnAutoStream').disabled = false;
+          document.getElementById('networkLaneBadge').textContent = 'HTTP Keep-Alive 接続中 (単方向ストリーム)';
+          document.getElementById('networkLaneBadge').className = 'lane-status-badge connected-sse';
+          document.getElementById('centerWire').className = 'wire active-stream';
+          appendLog('clientLog', '接続完了！サーバーからのプッシュ待機中...', 'success');
+
+          // 実サーバー稼働時の本物の EventSource 接続
+          if (isServerRunning) {
+            realES = new EventSource('/api/stream');
+            realES.onmessage = (e) => {
+              highlightLines(['c-sse-4', 'c-sse-5'], [], 1000);
+              spawnPacket(`data: ${e.data}`, 's2c', 'packet-data');
+              appendLog('clientLog', `実サーバーから受信: ${e.data}`, 'success');
+            };
+            realES.onerror = () => {
+              appendLog('clientLog', '実サーバー通信エラーまたは切断', 'error');
+            };
+          }
+        });
+      });
+
+    } else {
+      appendLog('clientLog', 'GET /ws (Upgrade: websocket) を送信...', 'info');
+      highlightLines(['c-ws-1', 'c-ws-2'], ['s-ws-1'], 1200);
+
+      // 実サーバー稼働時は即座に本物の WebSocket を接続
+      if (isServerRunning) {
+        const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        realWS = new WebSocket(`${wsProtocol}//${window.location.host}`);
+
+        realWS.onopen = () => {
+          isConnected = true;
+          document.getElementById('clientStatusBadge').textContent = 'WS接続完了 (全二重)';
+          document.getElementById('btnDisconnect').disabled = false;
+          document.getElementById('btnServerPush').disabled = false;
+          document.getElementById('btnAutoStream').disabled = false;
+          document.getElementById('wsMessageInput').disabled = false;
+          document.getElementById('btnSendMessage').disabled = false;
+          document.getElementById('networkLaneBadge').textContent = 'WebSocket 全二重通信 (昇格完了)';
+          document.getElementById('networkLaneBadge').className = 'lane-status-badge connected-ws';
+          document.getElementById('centerWire').className = 'wire active-ws';
+          appendLog('clientLog', '101プロトコル昇格完了！双方向フレーム通信が利用可能', 'success');
+          appendLog('serverLog', 'TCPコネクションを全二重ソケット通信に引き継ぎました', 'success');
+        };
+
+        realWS.onmessage = (e) => {
+          highlightLines(['c-ws-6', 'c-ws-7'], [], 1000);
+          spawnPacket(`WS Frame: ${e.data}`, 's2c', 'packet-data');
+          appendLog('clientLog', `サーバーから受信: ${e.data}`, 'success');
+        };
+
+        realWS.onerror = () => {
+          appendLog('clientLog', 'WebSocket通信エラー', 'error');
+        };
+      }
+
+      spawnPacket('Upgrade: websocket', 'c2s', 'packet-upgrade', () => {
+        appendLog('serverLog', 'Upgrade要求を受信。101 Switching Protocols で応答', 'warn');
+
+        spawnPacket('101 Switching Protocols', 's2c', 'packet-upgrade', () => {
+          if (!isServerRunning) {
+            isConnected = true;
+            document.getElementById('clientStatusBadge').textContent = 'WS接続完了 (全二重)';
+            document.getElementById('btnDisconnect').disabled = false;
+            document.getElementById('btnServerPush').disabled = false;
+            document.getElementById('btnAutoStream').disabled = false;
+            document.getElementById('wsMessageInput').disabled = false;
+            document.getElementById('btnSendMessage').disabled = false;
+            document.getElementById('networkLaneBadge').textContent = 'WebSocket 全二重通信 (昇格完了)';
+            document.getElementById('networkLaneBadge').className = 'lane-status-badge connected-ws';
+            document.getElementById('centerWire').className = 'wire active-ws';
+            appendLog('clientLog', '101プロトコル昇格完了！双方向フレーム通信が利用可能', 'success');
+            appendLog('serverLog', 'TCPコネクションを全二重ソケット通信に引き継ぎました', 'success');
+          }
+        });
+      });
+    }
+  }
+
+  function handleClientDisconnect() {
+    if (autoStreamInterval) {
+      clearInterval(autoStreamInterval);
+      autoStreamInterval = null;
+    }
+    if (realES) {
+      realES.close();
+      realES = null;
+    }
+    if (realWS) {
+      realWS.close();
+      realWS = null;
+    }
+    isConnected = false;
+
+    if (currentMode === 'sse') {
+      highlightLines(['c-sse-7', 'c-sse-8'], [], 1000);
+      appendLog('clientLog', 'es.close() により接続切断 (FIN送信)', 'warn');
+      appendLog('serverLog', 'クライアント切断を検知。ストリーム終了', 'warn');
+    } else {
+      appendLog('clientLog', 'ws.close() により切断フレーム送信', 'warn');
+      appendLog('serverLog', '切断フレームを受信しクローズ', 'warn');
+    }
+    resetUI();
+  }
+
+  function handleServerPush() {
+    if (!isConnected) return;
+    eventCounter++;
+    const payload = { id: eventCounter, time: new Date().toLocaleTimeString(), val: (Math.random() * 50 + 100).toFixed(1) };
+    const strPayload = JSON.stringify(payload);
+
+    if (currentMode === 'sse') {
+      highlightLines(['c-sse-4', 'c-sse-5'], ['s-sse-7', 's-sse-8'], 1200);
+      appendLog('serverLog', `res.write('data: ${strPayload}')`, 'info');
+
+      spawnPacket(`data: ${payload.val}`, 's2c', 'packet-data', () => {
+        appendLog('clientLog', `es.onmessage 受信: ${strPayload}`, 'success');
+      });
+    } else {
+      highlightLines(['c-ws-6', 'c-ws-7'], ['s-ws-5', 's-ws-6'], 1200);
+      appendLog('serverLog', `ws.send('サーバー通知 #${eventCounter}')`, 'info');
+
+      spawnPacket(`WS Frame: #${eventCounter}`, 's2c', 'packet-data', () => {
+        appendLog('clientLog', `ws.onmessage 受信: "サーバー通知 #${eventCounter}"`, 'success');
+      });
+    }
+  }
+
+  function handleClientSend() {
+    if (!isConnected || currentMode !== 'ws') return;
+    const input = document.getElementById('wsMessageInput');
+    const msg = input.value.trim() || 'メッセージ';
+
+    highlightLines(['c-ws-3', 'c-ws-4'], ['s-ws-3', 's-ws-4'], 1200);
+    appendLog('clientLog', `ws.send("${msg}")`, 'info');
+
+    if (realWS && realWS.readyState === WebSocket.OPEN) {
+      realWS.send(msg);
+      spawnPacket(`WS Frame: "${msg}"`, 'c2s', 'packet-data');
+      return;
+    }
+
+    spawnPacket(`WS Frame: "${msg}"`, 'c2s', 'packet-data', () => {
+      appendLog('serverLog', `ws.on('message') 受信: "${msg}"`, 'success');
+      // Auto echo back from server
+      setTimeout(() => {
+        if (!isConnected) return;
+        highlightLines(['c-ws-6', 'c-ws-7'], ['s-ws-5', 's-ws-6'], 1200);
+        appendLog('serverLog', `ws.send("Echo: ${msg}")`, 'info');
+        spawnPacket(`Echo: "${msg}"`, 's2c', 'packet-data', () => {
+          appendLog('clientLog', `ws.onmessage 受信: "Echo: ${msg}"`, 'success');
+        });
+      }, 300);
+    });
+  }
+
+  function toggleAutoStream() {
+    const btn = document.getElementById('btnAutoStream');
+    if (autoStreamInterval) {
+      clearInterval(autoStreamInterval);
+      autoStreamInterval = null;
+      btn.textContent = '↻ 自動ストリーム開始 (2秒間隔)';
+      btn.classList.remove('btn-success');
+      btn.classList.add('btn-secondary');
+    } else {
+      btn.textContent = '■ 自動ストリーム停止';
+      btn.classList.remove('btn-secondary');
+      btn.classList.add('btn-success');
+      handleServerPush();
+      autoStreamInterval = setInterval(() => {
+        handleServerPush();
+      }, 2000);
+    }
+  }
+
+  // Keyboard shortcut for mode switch (1 / 2) and Enter to send
+  window.addEventListener('keydown', (e) => {
+    if (e.target.id === 'wsMessageInput' && e.key === 'Enter') {
+      e.preventDefault();
+      handleClientSend();
+      return;
+    }
+    if (e.target.tagName === 'INPUT') return;
+    if (e.key === '1') switchMode('sse');
+    if (e.key === '2') switchMode('ws');
+  });
+
+  // Init
+  renderCode();
+  appendLog('clientLog', 'デモアプリ起動準備完了 (Mode: SSE)', 'info');
+  appendLog('serverLog', 'サーバー待機中 (Mode: SSE)', 'info');
+</script>
+
+</body>
+</html>
