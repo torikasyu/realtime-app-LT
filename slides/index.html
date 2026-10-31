@@ -450,6 +450,25 @@
             </p>
           </div>
         </div>
+
+        <!-- Infrastructure Note (AWS/Cloud connection) -->
+        <div style="margin-top: 18px; background: #f8fafc; border: 1px solid var(--border-dark); border-radius: 10px; padding: 14px 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.03);">
+          <div style="font-size: 0.95rem; font-weight: 700; color: var(--accent); margin-bottom: 6px;">
+            💡 これを理解しておくと、クラウド（AWS等）のインフラ設計・選定がスッキリわかる！
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; font-size: 0.92rem; color: #334155; line-height: 1.6;">
+            <div>
+              <strong style="color: var(--accent);">L7（アプリ層）の世界:</strong><br>
+              ・<strong>ALB</strong> (HTTPヘッダーやURLパスを見てルーティング)<br>
+              ・<strong>AWS WAF</strong> (SQLiや悪意あるHTTPリクエストを検知・遮断)
+            </div>
+            <div>
+              <strong style="color: var(--accent-green);">L4（トランスポート層）の世界:</strong><br>
+              ・<strong>NLB</strong> (ポート番号とTCP/UDPだけを見て超低遅延で転送)<br>
+              ・<strong>Security Group / NACL</strong> (IPとポート番号で制御する仮想FW)
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
